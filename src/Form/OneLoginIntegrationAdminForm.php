@@ -59,6 +59,20 @@ class OneLoginIntegrationAdminForm extends ConfigFormBase {
       '#description' => $this->t('Checking this box before configuring the module could lock you out of Drupal.'),
     ];
 
+    $form['basic']['sp_entity_id'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Service provider entity ID'),
+      '#description' => $this->t('Enter service provider entity ID (realm).'),
+      '#default_value' => $config->get('sp_entity_id'),
+    ];
+
+    $form['basic']['idp_entity_id'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Identity provider entity ID'),
+      '#description' => $this->t('Enter identity provider entity ID.'),
+      '#default_value' => $config->get('idp_entity_id'),
+    ];
+
     $form['basic']['cert'] = [
       '#type' => 'textarea',
       '#title' => $this->t('X.509 Certificate'),
@@ -114,6 +128,8 @@ class OneLoginIntegrationAdminForm extends ConfigFormBase {
     $config->set('activate', $form_state->getValue('activate'));
     $config->set('disable_default_login', $form_state->getValue('disable_default_login'));
     $config->set('disable_set_drupal_pwd', $form_state->getValue('disable_set_drupal_pwd'));
+    $config->set('sp_entity_id', $form_state->getValue('sp_entity_id'));
+    $config->set('idp_entity_id', $form_state->getValue('idp_entity_id'));
     $config->set('cert', $form_state->getValue('cert'));
     $config->set('privatekey', $form_state->getValue('privatekey'));
     $config->set('config_array', $form_state->getValue('config_array'));
