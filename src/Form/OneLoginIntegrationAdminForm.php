@@ -106,6 +106,18 @@ class OneLoginIntegrationAdminForm extends ConfigFormBase {
       '#description' => $this->t('Check this box if you want to disable passwords set for local Drupal accounts.'),
     ];
 
+    $form['debug'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Development settings'),
+      '#collapsible' => FALSE,
+    ];
+    $form['debug']['debug'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable debugging'),
+      '#default_value' => $config->get('debug'),
+      '#description' => $this->t('Check this box if you want to debug messages coming to and from identity provider. Leave unchecked in production environment.'),
+    ];
+
     $form['actions']['submit'] = [
       '#type'  => 'submit',
       '#value' => $this->t('Save'),
@@ -132,7 +144,7 @@ class OneLoginIntegrationAdminForm extends ConfigFormBase {
     $config->set('idp_entity_id', $form_state->getValue('idp_entity_id'));
     $config->set('cert', $form_state->getValue('cert'));
     $config->set('privatekey', $form_state->getValue('privatekey'));
-    $config->set('config_array', $form_state->getValue('config_array'));
+    $config->set('debug', $form_state->getValue('debug'));
     $config->save(TRUE);
 
     parent::submitForm($form, $form_state);
