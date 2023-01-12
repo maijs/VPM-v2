@@ -1,0 +1,19 @@
+latvia_auth.settings:
+  type: config_object
+  label: 'Latvia Auth settings.'
+  mapping:
+    activate:
+      type: boolean
+      label: 'Activate authentication via latvija.lv.'
+    disable_default_login:
+      type: boolean
+      label: 'Disable login with local accounts.'
+    disable_set_drupal_pwd:
+      type: boolean
+      label: 'Disable user password setting for local accounts.'
+    cert:
+      type: text
+      label: 'X.509 certificate'
+    privatekey:
+      type: text
+      label: 'Certificate private key'
