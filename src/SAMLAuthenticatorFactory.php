@@ -48,20 +48,27 @@ class SAMLAuthenticatorFactory implements SAMLAuthenticatorFactoryInterface {
    *   Returns a new instance of the OneLogin_Saml2_Auth library.
    */
   public function createFromSettings(array $settings = []) {
-    $path = \Drupal::service('settings')->get('auth_path');
-
     $config = $this->configFactory->get('latvia_auth.settings');
 
+    // Get identity provider X.509 certificate.
     $cert = $config->get('cert');
-    if(empty($cert)) {
-      $cert = file_get_contents(DRUPAL_ROOT."/../certs/latvia_auth/cert.txt", FILE_USE_INCLUDE_PATH);
+
+    if (empty($cert)) {
+      $cert = file_get_contents(DRUPAL_ROOT . '/../certs/latvia_auth/cert.txt', FILE_USE_INCLUDE_PATH);
+    }
+
+    // Get service provider private key.
+    $private_key = $config->get('privatekey');
+
+    if (empty($private_key)) {
+      $private_key = file_get_contents(DRUPAL_ROOT . '/../certs/latvia_auth/private_key.txt', FILE_USE_INCLUDE_PATH);
     }
 
     $default_settings = [
       'strict' => true,
       'debug' => false,
       'sp' => [
-        'entityId' => 'https://' . $path . '/',
+        'entityId' => $config->get('sp_entity_id'),
         'assertionConsumerService' => [
           'url' => Url::fromRoute('latvia_auth.acs', [], ['absolute' => TRUE])->toString(),
           'binding' => 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST'
@@ -70,9 +77,10 @@ class SAMLAuthenticatorFactory implements SAMLAuthenticatorFactoryInterface {
           'url' => Url::fromRoute('latvia_auth.slo', [], ['absolute' => TRUE])->toString(),
           'binding' => 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect',
         ],
+        'privateKey' => $private_key,
       ],
       'idp' => [
-        'entityId' => 'http://www.latvija.lv/sts',
+        'entityId' => $config->get('idp_entity_id'),
         'singleSignOnService' => [
           'url' => \Drupal::service('settings')->get('latvia_saml_path'),
           'binding' => 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect',
