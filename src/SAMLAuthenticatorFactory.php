@@ -66,7 +66,7 @@ class SAMLAuthenticatorFactory implements SAMLAuthenticatorFactoryInterface {
 
     $default_settings = [
       'strict' => true,
-      'debug' => false,
+      'debug' => (bool) $config->get('debug'),
       'sp' => [
         'entityId' => $config->get('sp_entity_id'),
         'assertionConsumerService' => [
