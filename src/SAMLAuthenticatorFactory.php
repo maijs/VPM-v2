@@ -50,10 +50,18 @@ class SAMLAuthenticatorFactory implements SAMLAuthenticatorFactoryInterface {
   public function createFromSettings(array $settings = []) {
     $config = $this->configFactory->get('latvia_auth.settings');
 
+    // Get identity provider X.509 certificate.
     $cert = $config->get('cert');
 
     if (empty($cert)) {
       $cert = file_get_contents(DRUPAL_ROOT . '/../certs/latvia_auth/cert.txt', FILE_USE_INCLUDE_PATH);
+    }
+
+    // Get service provider private key.
+    $private_key = $config->get('privatekey');
+
+    if (empty($private_key)) {
+      $private_key = file_get_contents(DRUPAL_ROOT . '/../certs/latvia_auth/private_key.txt', FILE_USE_INCLUDE_PATH);
     }
 
     $default_settings = [
@@ -69,6 +77,7 @@ class SAMLAuthenticatorFactory implements SAMLAuthenticatorFactoryInterface {
           'url' => Url::fromRoute('latvia_auth.slo', [], ['absolute' => TRUE])->toString(),
           'binding' => 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect',
         ],
+        'privateKey' => $private_key,
       ],
       'idp' => [
         'entityId' => $config->get('idp_entity_id'),
