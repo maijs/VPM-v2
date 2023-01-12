@@ -11,6 +11,7 @@ use Drupal\Core\Config\ConfigCrudEvent;
 use Drupal\Core\Config\ConfigEvents;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Routing\RouteBuilderInterface;
+use Drupal\Core\Routing\RouteProviderInterface;
 use Drupal\Core\Routing\RouteSubscriberBase;
 use Symfony\Component\Routing\RouteCollection;
 
@@ -34,16 +35,26 @@ class RouteSubscriber extends RouteSubscriberBase {
   protected $routerBuilder;
 
   /**
+   * The route provider service.
+   *
+   * @var \Drupal\Core\Routing\RouteProviderInterface
+   */
+  protected $routeProvider;
+
+  /**
    * Constructs a Route subscriber object.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   Configuration Factory.
    * @param \Drupal\Core\Routing\RouteBuilderInterface $router_builder
    *   The router builder service.
+   * @param \Drupal\Core\Routing\RouteProviderInterface $route_provider
+   *   The route provider service.
    */
-  public function __construct(ConfigFactoryInterface $configFactory, RouteBuilderInterface $router_builder) {
+  public function __construct(ConfigFactoryInterface $configFactory, RouteBuilderInterface $router_builder, RouteProviderInterface $route_provider) {
     $this->configFactory = $configFactory;
     $this->routerBuilder = $router_builder;
+    $this->routeProvider = $route_provider;
   }
 
   /**
@@ -73,7 +84,10 @@ class RouteSubscriber extends RouteSubscriberBase {
 
       if ($config->get('activate')) {
         if ($logout_route = $collection->get('user.logout')) {
-          $logout_route->setPath('/onelogin_saml/slo');
+          // Get single log-out route.
+          $slo_route_path = $this->routeProvider->getRouteByName('latvia_auth.slo')->getPath();
+
+          $logout_route->setPath($slo_route_path);
         }
       }
     }

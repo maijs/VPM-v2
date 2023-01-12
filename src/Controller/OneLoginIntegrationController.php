@@ -4,6 +4,7 @@ namespace Drupal\latvia_auth\Controller;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Routing\RouteProviderInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Drupal\Core\Url;
 use Drupal\latvia_auth\AuthenticationServiceInterface;
@@ -43,11 +44,11 @@ class OneLoginIntegrationController extends ControllerBase {
   protected $user;
 
   /**
-   * The variable that holds an instance of the ConfigFactoryInterface.
+   * The variable that holds an instance of the configuration object.
    *
-   * @var \Drupal\Core\Config\ConfigFactoryInterface
+   * @var \Drupal\Core\Config\ImmutableConfig
    */
-  protected $configFactory;
+  protected $config;
 
   /**
    * The Messenger service.
@@ -55,6 +56,13 @@ class OneLoginIntegrationController extends ControllerBase {
    * @var \Drupal\Core\Messenger\MessengerInterface
    */
   protected $messenger;
+
+  /**
+   * The route provider service.
+   *
+   * @var \Drupal\Core\Routing\RouteProviderInterface
+   */
+  protected $routeProvider;
 
   /**
    * Default error message lv
@@ -84,13 +92,16 @@ class OneLoginIntegrationController extends ControllerBase {
    *   The messenger.
    * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
    *   Reference to the ConfigFactoryInterface.
+   * @param \Drupal\Core\Routing\RouteProviderInterface $route_provider
+   *   The route provider service.
    */
-  public function __construct(Auth $one_login_saml_2_auth, AuthenticationServiceInterface $authentication_service, AccountInterface $account, MessengerInterface $messenger, ConfigFactoryInterface $config_factory) {
+  public function __construct(Auth $one_login_saml_2_auth, AuthenticationServiceInterface $authentication_service, AccountInterface $account, MessengerInterface $messenger, ConfigFactoryInterface $config_factory, RouteProviderInterface $route_provider) {
     $this->oneLoginSaml2Auth = $one_login_saml_2_auth;
     $this->authenticationService = $authentication_service;
     $this->account = $account;
     $this->messenger = $messenger;
     $this->config = $config_factory->get('latvia_auth.settings');
+    $this->routeProvider = $route_provider;
   }
 
   /**
@@ -107,7 +118,8 @@ class OneLoginIntegrationController extends ControllerBase {
       $container->get('latvia_auth.authentication_service'),
       $container->get('current_user'),
       $container->get('messenger'),
-      $container->get('config.factory')
+      $container->get('config.factory'),
+      $container->get('router.route_provider')
     );
   }
 
@@ -124,8 +136,11 @@ class OneLoginIntegrationController extends ControllerBase {
     $auth_path = \Drupal::service('settings')->get('auth_path');
     $host = \Drupal::request()->getHost();
 
+    // Get single sign-on route.
+    $sso_route_path = $this->routeProvider->getRouteByName('latvia_auth.sso')->getPath();
+
     if (!empty($auth_path) && $auth_path != $host) {
-      $response =  new TrustedRedirectResponse(Url::fromUri('//' . $auth_path . '/onelogin_saml/sso', ['query' => ['returnTo' => $host]])->toString());
+      $response = new TrustedRedirectResponse(Url::fromUri('//' . $auth_path . $sso_route_path, ['query' => ['returnTo' => $host]])->toString());
       return $response->send();
     }
 
@@ -136,7 +151,7 @@ class OneLoginIntegrationController extends ControllerBase {
 
     if (!$this->account->isAnonymous()) {
       if (isset($target) && strpos($target, 'latvia_auth/sso') === FALSE) {
-        return new RedirectResponse(Url::fromUri('internal:' . $target));
+        return new RedirectResponse(Url::fromUri('internal:' . $target)->toString());
       }
       else {
         return new RedirectResponse('/');
@@ -191,11 +206,14 @@ class OneLoginIntegrationController extends ControllerBase {
           }
         }
 
+        // Get assertion consumer service route.
+        $acs_route_path = $this->routeProvider->getRouteByName('latvia_auth.acs')->getPath();
+
         return [
           '#theme' => 'latvia_auth_redirect',
           '#data' => (isset($p_code)) ? $p_code : '',
           '#token' => $this->getToken($postReq['RelayState']),
-          '#link' => $postReq['RelayState'] . '/onelogin_saml/acs',
+          '#link' => $postReq['RelayState'] . $acs_route_path,
           '#error' => (isset($error)) ? $error : '',
           '#cache' => [
             'max-age' => 0
@@ -217,13 +235,13 @@ class OneLoginIntegrationController extends ControllerBase {
       }
 
       $identifier = $this->authenticationService->decryptPcode($postReq['TVPAuthResponse']);
-      if(empty($identifier)) {
+      if (empty($identifier)) {
         $errors = 'error';
       }
 
       if (empty($errors)) {
         $identifier = json_decode($identifier, true);
-        if($uid = $this->authenticationService->processLogin(substr($identifier['identifier'], 3))) {
+        if ($uid = $this->authenticationService->processLogin(substr($identifier['identifier'], 3))) {
           \Drupal::service('user.data')->set('latvia_auth', $uid, 'logged_in', true);
           return $this->redirect('entity.user.canonical', ['user' => $uid]);
         }
@@ -257,7 +275,10 @@ class OneLoginIntegrationController extends ControllerBase {
       if ($this->config->get('activate')) {
         $uid = \Drupal::currentUser()->id();
         if (\Drupal::service('user.data')->get('latvia_auth', \Drupal::currentUser()->id(), 'logged_in')) {
-          $response =  new TrustedRedirectResponse(Url::fromUri('//' . $auth_path . '/onelogin_saml/slo', ['query' => ['returnTo' => $host, 'user' => $uid, 'token' => $this->getToken($host)]])->toString());
+          // Get single log-out route.
+          $slo_route_path = $this->routeProvider->getRouteByName('latvia_auth.slo')->getPath();
+
+          $response = new TrustedRedirectResponse(Url::fromUri('//' . $auth_path . $slo_route_path, ['query' => ['returnTo' => $host, 'user' => $uid, 'token' => $this->getToken($host)]])->toString());
           return $response->send();
         }
         else {
@@ -317,7 +338,10 @@ class OneLoginIntegrationController extends ControllerBase {
       if (isset($params['RelayState']) && !empty($params['RelayState'])) {
         $relay = explode('?', $params['RelayState']);
 
-        $response =  new TrustedRedirectResponse(Url::fromUri('//' . $relay[0] . '/onelogin_saml/sls?' . $relay[1] . '&token=' . $this->getToken($relay[0]))->toString());
+        // Get single log-out service route.
+        $sls_route_path = $this->routeProvider->getRouteByName('latvia_auth.sls')->getPath();
+
+        $response =  new TrustedRedirectResponse(Url::fromUri('//' . $relay[0] . $sls_route_path . '?' . $relay[1] . '&token=' . $this->getToken($relay[0]))->toString());
         return $response->send();
       }
     }
