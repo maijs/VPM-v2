@@ -1,9 +1,10 @@
 {
-  "name": "latvia_auth",
-  "description": "Latvija.lv user authentication.",
+  "name": "drupal/latvia_auth",
+  "description": "Module for authentication with Latvija.lv identity provider.",
   "type": "drupal-module",
   "homepage": "https://www.drupal.org/project/latvia_auth",
   "require": {
-    "onelogin/php-saml": "^3.4"
+    "onelogin/php-saml": "^3.4",
+    "defuse/php-encryption": "^2.0"
   }
 }
