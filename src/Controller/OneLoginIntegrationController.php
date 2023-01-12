@@ -2,6 +2,7 @@
 
 namespace Drupal\latvia_auth\Controller;
 
+use Drupal\Component\Utility\Variable;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Routing\RouteProviderInterface;
@@ -176,8 +177,13 @@ class OneLoginIntegrationController extends ControllerBase {
    *   the given settings.
    */
   public function assertionConsumerService(Request $request) {
+    $settings = $this->oneLoginSaml2Auth->getSettings();
     $postReq = $request->request->all();
     $host = \Drupal::request()->getHost();
+
+    if ($settings->isDebugActive()) {
+      $this->logRequestParams($request);
+    }
 
     if (isset($postReq['RelayState']) && isset($postReq['SAMLResponse']) && !empty($postReq['SAMLResponse'])) {
       $auth_path = \Drupal::service('settings')->get('auth_path');
@@ -372,4 +378,18 @@ class OneLoginIntegrationController extends ControllerBase {
   public function getToken($host) {
     return hash('sha256', $host . \Drupal::service('settings')->get('crypt_key') . date('Y.m.d'));
   }
+
+  /**
+   * Logs request data to the log file.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *
+   * @return void
+   */
+  protected function logRequestParams(Request $request) {
+    $post_data = $request->request->all();
+    $message = Variable::export($post_data);
+    $this->getLogger('latvia_auth')->debug($message);
+  }
+
 }

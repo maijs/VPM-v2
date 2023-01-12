@@ -11,6 +11,9 @@ latvia_auth.settings:
     disable_set_drupal_pwd:
       type: boolean
       label: 'Disable user password setting for local accounts.'
+    debug:
+      type: boolean
+      label: 'Enable debug.'
     sp_entity_id:
       type: string
       label: 'Service provider entity ID'
