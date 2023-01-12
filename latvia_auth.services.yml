@@ -10,7 +10,7 @@ services:
     arguments: ['@latvia_auth.authenticator_service', '@entity_type.manager', '@messenger', '@logger.factory', '@latvia_auth.cryptor']
   latvia_auth.route_subscriber:
     class: Drupal\latvia_auth\EventSubscriber\RouteSubscriber
-    arguments: ['@config.factory', '@router.builder']
+    arguments: ['@config.factory', '@router.builder', '@router.route_provider']
     tags:
       - { name: event_subscriber }
   latvia_auth.cryptor:
