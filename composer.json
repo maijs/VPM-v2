@@ -4,7 +4,7 @@
   "type": "drupal-module",
   "homepage": "https://www.drupal.org/project/latvia_auth",
   "require": {
-    "onelogin/php-saml": "^3.4",
+    "onelogin/php-saml": "^4.1",
     "defuse/php-encryption": "^2.0"
   }
 }
