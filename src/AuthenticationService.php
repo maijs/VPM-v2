@@ -3,11 +3,12 @@
 namespace Drupal\latvia_auth;
 
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Url;
 use Drupal\user\UserInterface;
 use OneLogin\Saml2\Auth;
 use Drupal\Core\Messenger\MessengerInterface;
-use Drupal\Core\Logger\LoggerChannelFactoryInterface;
-use Drupal\latvia_auth\Cryptor;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\HttpFoundation\RedirectResponse;
 
 /**
  * AuthenticationService Class.
@@ -33,35 +34,51 @@ class AuthenticationService implements AuthenticationServiceInterface {
    *
    * @var \Drupal\Core\Entity\EntityTypeManagerInterface
    */
-  private $entityTypeManager;
+  protected $entityTypeManager;
 
   /**
-   * The Messenger service.
+   * The messenger service.
    *
    * @var \Drupal\Core\Messenger\MessengerInterface
    */
   protected $messenger;
 
   /**
-   * Private personal identifier
+   * The logger service.
+   *
+   * @var \Psr\Log\LoggerInterface
+   */
+  protected $logger;
+
+  /**
+   * Encryption service definition.
+   *
+   * @var \Drupal\latvia_auth\Cryptor
+   */
+  protected $cryptor;
+
+  /**
+   * Required assertion attributes.
+   *
+   * @var string[]
+   */
+  protected $requiredAttributes = [
+    'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/privatepersonalidentifier',
+  ];
+
+  /**
+   * The Saml attribute which defines user identity in Drupal.
    *
    * @var string
    */
-  protected $identifier = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/privatepersonalidentifier";
+  protected $identityAttribute = 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/privatepersonalidentifier';
 
   /**
-   * Logger Factory.
+   * The user entity field name which is used for user authentication.
    *
-   * @var \Drupal\Core\Logger\LoggerChannelFactoryInterface
+   * @var string
    */
-  protected $loggerFactory;
-
-  /**
-   * Drupal\latvia_auth\Cryptor definition.
-   *
-   * @var Drupal\latvia_auth\Cryptor
-   */
-  protected $cryptor;
+  protected $identityUserFieldName = 'field_user_personal_code';
 
   /**
    * AuthenticationService constructor.
@@ -72,58 +89,105 @@ class AuthenticationService implements AuthenticationServiceInterface {
    *   Reference to EntityTypeManagerInterface.
    * @param \Drupal\Core\Messenger\MessengerInterface $messenger
    *   The messenger service.
-   * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
+   * @param \Psr\Log\LoggerInterface $logger
    *   Logger Factory.
    * @param \Drupal\latvia_auth\Cryptor $cryptor
    */
-  public function __construct(Auth $one_login_saml_2_auth, EntityTypeManagerInterface $entity_type_manager, MessengerInterface $messenger, LoggerChannelFactoryInterface $logger_factory, Cryptor $cryptor) {
+  public function __construct(Auth $one_login_saml_2_auth, EntityTypeManagerInterface $entity_type_manager, MessengerInterface $messenger, LoggerInterface $logger, Cryptor $cryptor) {
     $this->oneLoginSaml2Auth = $one_login_saml_2_auth;
     $this->entityTypeManager = $entity_type_manager;
     $this->messenger = $messenger;
-    $this->loggerFactory = $logger_factory;
+    $this->logger = $logger;
     $this->cryptor = $cryptor;
   }
 
   /**
-   * The processLoginRequest function.
+   * {@inheritdoc}
    *
-   * This function takes the attributes sent with the login request from
-   * OneLogin. It tries to find a personal identifier in SAML.
-   *
-   * @return string personal identifier or false
+   * This function returns the required attributes from the Saml login request.
    */
   public function processLoginRequest() {
-    // If there is no nameId found, logging in with SAML has no use. So redirect
-    // the user back to the homepage with a message accordingly.
-    $pk = $this->oneLoginSaml2Auth->getNameId();
-    if (empty($pk)) {
-      $this->loggerFactory->get('latvia_auth')->error('A NameId could not be found. Please supply a NameId in your SAML Response.');
+    try {
+      // Validate login request values.
+      $this->validateLoginRequest();
 
-      return false;
+      $result = [];
+
+      foreach ($this->requiredAttributes as $attribute) {
+        $result[$attribute] = $this->oneLoginSaml2Auth->getAttribute($attribute)[0] ?? NULL;
+      }
+
+      return $result;
+    }
+    catch (\Exception $e) {
+      watchdog_exception('latvia_auth', $e);
     }
 
-    if (strncmp($pk, "PK:", 3) === 0) {
-      return $pk;
-    }
-
-    return false;
+    return FALSE;
   }
 
   /**
-   * It tries to find a user by passed personal identifier and process the drupal auth.
+   * Validates the Saml response.
    *
-   * @return user id if successfully logged in or null
+   * @throws \Exception
    */
-  public function processLogin($identifier) {
-    if ($account = $this->load($identifier)) {
-      $account = $this->userLoginFinalize($account);
+  protected function validateLoginRequest() {
+    foreach ($this->requiredAttributes as $attribute) {
+      if (!isset($this->oneLoginSaml2Auth->getAttribute($attribute)[0])) {
+        throw new \Exception(sprintf('An attribute "%s" cannot be found in the Saml response.', $attribute));
+      }
+    }
+  }
 
-      return $account->id();
+  /**
+   * Authenticates the user by personal identifier.
+   *
+   * @return \Symfony\Component\HttpFoundation\RedirectResponse|false
+   *   The user ID if successfully logged in or NULL.
+   */
+  public function processLogin($data) {
+    try {
+      $this->validateLoginData($data);
+
+      if ($account = $this->load($this->getIdentityAttributeValue($data))) {
+        // Finalize login.
+        $this->userLoginFinalize($account);
+
+        return $this->prepareResponse('entity.user.canonical', ['user' => $account->id()]);
+      }
+    } catch (\Exception $e) {
+      watchdog_exception('latvia_auth', $e);
     }
 
-    // No user found, show error message
-    $this->loggerFactory->get('latvia_auth')->error('No user found with passed personal code');
-    return NULL;
+    return FALSE;
+  }
+
+  /**
+   * Validates user data array.
+   *
+   * @param $data
+   *   User data array.
+   *
+   * @throws \Exception
+   */
+  protected function validateLoginData($data) {
+    foreach ($this->requiredAttributes as $attribute) {
+      if (!isset($data[$attribute])) {
+        throw new \Exception(sprintf('An attribute "%s" could not be found in the provided data.', $attribute));
+      }
+    }
+  }
+
+  /**
+   * Returns identity attribute value.
+   *
+   * @param mixed $data
+   *   User data array.
+   *
+   * @return string|null
+   */
+  protected function getIdentityAttributeValue($data) {
+    return $data[$this->identityAttribute] ?? NULL;
   }
 
   /**
@@ -133,15 +197,24 @@ class AuthenticationService implements AuthenticationServiceInterface {
    *   The unique, external authentication name provided by authentication
    *   provider.
    *
-   * @return \Drupal\user\UserInterface
+   * @return \Drupal\user\UserInterface|false
    *   The loaded Drupal user.
    */
   public function load($identifier) {
-    $identifier = \Drupal::service('latvia_auth.cryptor')->hashString($identifier);
+    try {
+      // Hash the identifier.
+      $identifier = $this->cryptor->hashString($identifier);
+      // Get users by given identifier.
+      $users = $this->entityTypeManager->getStorage('user')->loadByProperties([$this->identityUserFieldName => $identifier]);
 
-    $users = $this->entityTypeManager->getStorage('user')->loadByProperties(['field_user_personal_code' => $identifier]);
-    if ($users && count($users) == 1) {
-      return reset($users);
+      if ($users && count($users) == 1) {
+        return reset($users);
+      }
+
+      throw new \Exception('No user found with given user identifier.');
+    }
+    catch (\Exception $e) {
+      watchdog_exception('latvia_auth', $e);
     }
 
     return FALSE;
@@ -156,36 +229,73 @@ class AuthenticationService implements AuthenticationServiceInterface {
    * @return \Drupal\user\UserInterface
    *   The logged in Drupal user.
    */
-  public function userLoginFinalize(UserInterface $account) {
+  protected function userLoginFinalize(UserInterface $account) {
+    // Finalize user login.
     user_login_finalize($account);
-    $this->loggerFactory->get('latvia_auth')->notice('Successfully logged in by latvija.lv by user %name', ['%name' => $account->getAccountName()]);
-    \Drupal::service('user.data')->set('latvia_auth', $account->id(), 'logged_in', true);
+
+    // Execute additional commands after login.
+    $this->postUserLoginFinalize($account);
+
+    // Log the event.
+    $this->logger->notice('User %name is logged in (via latvija.lv).', ['%name' => $account->getAccountName()]);
 
     return $account;
   }
 
   /**
-   * Crypt people personal code
+   * Run additional steps after user login finalization.
    *
-   * @param string $personal_code
+   * @return \Drupal\user\UserInterface
+   *   The logged in Drupal user.
+   *
+   * @return void
+   */
+  protected function postUserLoginFinalize(UserInterface $account) {
+    // Set the "logged_in" flag.
+    \Drupal::service('user.data')->set('latvia_auth', $account->id(), 'logged_in', TRUE);
+  }
+
+  /**
+   * Encrypt user data.
+   *
+   * @param array $user_data
    *
    * @return string
    */
-  public function cryptPcode($personal_code) {
-    $user_data = [
-      'identifier' => $personal_code
-    ];
+  public function encryptUserData(array $user_data) {
     return $this->cryptor->encrypt(json_encode($user_data));
   }
 
   /**
-   * Encrypt passed data
+   * Encrypt passed user data.
    *
-   * @param string $data
+   * @param string $user_data
    *
-   * @return string
+   * @return array|null
    */
-  public function decryptPcode($data) {
-    return $this->cryptor->decrypt($data);
+  public function decryptUserData($user_data) {
+    $user_data = $this->cryptor->decrypt($user_data);
+
+    return (array) json_decode($user_data);
   }
+
+  /**
+   * Prepares redirect response.
+   *
+   * @param $route_name
+   *   The route name.
+   * @param array $route_parameters
+   *   The route parameters.
+   * @param array $options
+   *   The route options.
+   * @param $status
+   *   The status code.
+   *
+   * @return \Symfony\Component\HttpFoundation\RedirectResponse
+   */
+  protected function prepareResponse($route_name, array $route_parameters = [], array $options = [], $status = 302) {
+    $options['absolute'] = TRUE;
+    return new RedirectResponse(Url::fromRoute($route_name, $route_parameters, $options)->toString(), $status);
+  }
+
 }

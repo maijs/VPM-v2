@@ -182,8 +182,10 @@ class OneLoginIntegrationController extends ControllerBase {
           $error = $this->defaultMessage;
         }
         else {
-          if($p_code = $this->authenticationService->processLoginRequest()) {
-            $p_code = $this->authenticationService->cryptPcode($p_code);
+          // Get user data from the Saml response.
+          if ($data = $this->authenticationService->processLoginRequest()) {
+            // Prepare the encrypted string.
+            $user_data_encrypted = $this->authenticationService->encryptUserData($data);
           }
           else {
             \Drupal::logger('latvia_auth')->error("There was at least one error processing the SAML Response: no personal code found in SAML response!");
@@ -193,7 +195,7 @@ class OneLoginIntegrationController extends ControllerBase {
 
         return [
           '#theme' => 'latvia_auth_redirect',
-          '#data' => (isset($p_code)) ? $p_code : '',
+          '#data' => $user_data_encrypted ?? '',
           '#token' => $this->getToken($postReq['RelayState']),
           '#link' => $postReq['RelayState'] . '/onelogin_saml/acs',
           '#error' => (isset($error)) ? $error : '',
@@ -215,21 +217,25 @@ class OneLoginIntegrationController extends ControllerBase {
       if ($postReq['TVPToken'] !== $this->getToken($host)) {
         $errors = 'error';
       }
+      $data = $this->authenticationService->decryptUserData($postReq['TVPAuthResponse']);
 
-      $identifier = $this->authenticationService->decryptPcode($postReq['TVPAuthResponse']);
-      if(empty($identifier)) {
+      if (empty($data)) {
         $errors = 'error';
       }
 
       if (empty($errors)) {
-        $identifier = json_decode($identifier, true);
-        if($uid = $this->authenticationService->processLogin(substr($identifier['identifier'], 3))) {
-          \Drupal::service('user.data')->set('latvia_auth', $uid, 'logged_in', true);
-          return $this->redirect('entity.user.canonical', ['user' => $uid]);
+        try {
+          // Authenticate the user.
+          if ($redirect_response = $this->authenticationService->processLogin($data)) {
+            return $redirect_response;
+          }
+        }
+        catch (\Exception $e) {
+          watchdog_exception('latvia_auth', $e);
         }
       }
 
-      \Drupal::messenger()->addError(t('Something went wrong, contact page administrator.'));
+      $this->messenger()->addError(t('Something went wrong, contact page administrator.'));
       return $this->redirect('user.login');
     }
 

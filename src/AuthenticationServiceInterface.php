@@ -13,14 +13,30 @@ namespace Drupal\latvia_auth;
 interface AuthenticationServiceInterface {
 
   /**
-   * The processLoginRequest method.
+   * Processes login request.
    *
-   * Gets the username or email address from the OneLogin request and calls
-   * other functions accordingly.
+   * Gets the user data from the assertion request and calls other functions
+   * accordingly.
    *
    * @return mixed
-   *   Returns multiple things, depending on the part of the code that is
-   *   executing.
+   *   Returns the user data needed for authentification.
+   *
+   * @see self::processLogin()
    */
   public function processLoginRequest();
+
+  /**
+   * Authenticates the user in the system.
+   *
+   * @param mixed $data
+   *   The data required for authentication in the system.
+   *
+   * @return \Symfony\Component\HttpFoundation\RedirectResponse|false
+   *   Redirect response which indicates that the user has been logged in or
+   *   FALSE if login failed.
+   *
+   * @see self::processLoginRequest()
+   */
+  public function processLogin($data);
+
 }
